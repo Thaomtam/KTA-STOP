@@ -114,7 +114,6 @@ kotlin {
 
 dependencies {
     compileOnly(libs.xposed.api)
-    implementation(libs.dexkit)
     compileOnly(libs.androidx.annotation)
     implementation(libs.ezxhelper)
     implementation(libs.dev.rikka.hidden.compat)
