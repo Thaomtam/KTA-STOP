@@ -32,7 +32,7 @@ class Launcher3Handler : IXposedHookLoadPackage {
         private const val PREFS_NAME = "myinjector_launcher3_prefs"
         private const val KEY_EXCEPTION_LIST = "exception_list"
         private const val KEY_ENABLE_FORCE_STOP = "enableForceStop" // Define key constant
-        private const val LONG_PRESS_TIMEOUT_MS = 100L // Configurable long press duration
+        private const val LONG_PRESS_TIMEOUT_MS = 250L // Configurable long press duration
 
         // Default protected system packages
         // Added common Google packages and potentially sensitive apps
