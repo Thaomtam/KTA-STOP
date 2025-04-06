@@ -3,15 +3,15 @@ package com.KTA.STOP.hook
 import android.content.ComponentName
 import android.os.Handler
 import android.os.Looper
+import android.os.ServiceManager
 import android.util.Log
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import com.github.kyuubiran.ezxhelper.utils.findMethod
 import com.github.kyuubiran.ezxhelper.utils.hookAfter
-import com.github.kyuubiran.ezxhelper.utils.getObjectOrNull
 import de.robv.android.xposed.XC_MethodHook
-import rikka.hidden.compat.ActivityManagerApis
+import de.robv.android.xposed.XposedHelpers
 
 class Launcher3Handler : BaseHook() {
     companion object {
@@ -31,16 +31,22 @@ class Launcher3Handler : BaseHook() {
             hookBeginDrag = findMethod(taskViewClass) {
                 name == "onTouchEvent"
             }.hookAfter { param ->
-                val view = param.args[0] as View
-                onBeginDrag(view)
+                val motionEvent = param.args[0] as android.view.MotionEvent
+                if (motionEvent.action == android.view.MotionEvent.ACTION_DOWN) {
+                    val view = param.thisObject as View
+                    onBeginDrag(view)
+                }
             }
 
             // Hook onDragEnd
             hookDragEnd = findMethod(taskViewClass) {
                 name == "onTouchEvent"
             }.hookAfter { param ->
-                val view = param.args[0] as View
-                onDragEnd(view)
+                val motionEvent = param.args[0] as android.view.MotionEvent
+                if (motionEvent.action == android.view.MotionEvent.ACTION_UP) {
+                    val view = param.thisObject as View
+                    onDragEnd(view)
+                }
             }
 
             // Hook onChildDismissedEnd
@@ -55,8 +61,11 @@ class Launcher3Handler : BaseHook() {
             hookCancel = findMethod(taskViewClass) {
                 name == "onTouchEvent"
             }.hookAfter { param ->
-                val view = param.args[0] as View
-                onDragCancelled(view)
+                val motionEvent = param.args[0] as android.view.MotionEvent
+                if (motionEvent.action == android.view.MotionEvent.ACTION_CANCEL) {
+                    val view = param.thisObject as View
+                    onDragCancelled(view)
+                }
             }
         }.onFailure {
             Log.e(TAG, "Fatal error occurred, disable hooks", it)
@@ -80,20 +89,50 @@ class Launcher3Handler : BaseHook() {
     private var origText: CharSequence? = null
     private var setViewHeaderRunnable = Runnable { setupToBeKilled() }
     private var mToBeKilled: View? = null
+    private val ams by lazy { 
+        val am = ServiceManager.getService("activity")
+        XposedHelpers.findClass("android.app.IActivityManager\$Stub", null)
+            .getDeclaredMethod("asInterface", android.os.IBinder::class.java)
+            .invoke(null, am)
+    }
 
-    private fun findDismissView(): TextView {
-        val headerView = mCurrentView?.getObjectOrNull("mHeaderView") // Trả về Any? hoặc null
-        val dismissView = headerView?.getObjectOrNull("mDismissView") // Trả về Any? hoặc null
-        return dismissView as? TextView ?: throw IllegalStateException("Dismiss view not found or not a TextView")
+    private fun findDismissView(view: View): TextView? {
+        return try {
+            val footer = XposedHelpers.getObjectField(view, "mFooter") as? View
+            footer?.let { findTextViewInViewGroup(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding dismiss view", e)
+            null
+        }
+    }
+
+    private fun findTextViewInViewGroup(viewGroup: View): TextView? {
+        if (viewGroup is TextView) return viewGroup
+        try {
+            val childCount = XposedHelpers.callMethod(viewGroup, "getChildCount") as Int
+            for (i in 0 until childCount) {
+                val child = XposedHelpers.callMethod(viewGroup, "getChildAt", i) as View
+                if (child is TextView) return child
+                val result = findTextViewInViewGroup(child)
+                if (result != null) return result
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error traversing view hierarchy", e)
+        }
+        return null
     }
 
     private fun setupToBeKilled() {
-        mCurrentView ?: return
-        runCatching {
-            findDismissView().text = "停止进程"
-            mToBeKilled = mCurrentView
-        }.onFailure {
-            Log.e(TAG, "Failed to setup to be killed", it)
+        mCurrentView?.let { view ->
+            runCatching {
+                val dismissView = findDismissView(view)
+                if (dismissView != null) {
+                    dismissView.text = "停止进程"
+                    mToBeKilled = view
+                }
+            }.onFailure {
+                Log.e(TAG, "Failed to setup to be killed", it)
+            }
         }
     }
 
@@ -101,8 +140,11 @@ class Launcher3Handler : BaseHook() {
         mCurrentView = v
         mToBeKilled = null
         runCatching {
-            origText = findDismissView().text
-            handler.postDelayed(setViewHeaderRunnable, 700)
+            val dismissView = findDismissView(v)
+            if (dismissView != null) {
+                origText = dismissView.text
+                handler.postDelayed(setViewHeaderRunnable, 700)
+            }
         }.onFailure {
             Log.e(TAG, "Failed in onBeginDrag", it)
         }
@@ -111,7 +153,10 @@ class Launcher3Handler : BaseHook() {
     private fun onDragEnd(v: View) {
         handler.removeCallbacks(setViewHeaderRunnable)
         runCatching {
-            if (origText != null) findDismissView().text = origText
+            val dismissView = findDismissView(v)
+            if (dismissView != null && origText != null) {
+                dismissView.text = origText
+            }
         }.onFailure {
             Log.e(TAG, "Failed in onDragEnd", it)
         }
@@ -121,6 +166,7 @@ class Launcher3Handler : BaseHook() {
 
     private fun onDragCancelled(v: View) {
         Log.d(TAG, "onDragCancelled: cancelled $mToBeKilled")
+        handler.removeCallbacks(setViewHeaderRunnable)
         mToBeKilled = null
     }
 
@@ -130,21 +176,18 @@ class Launcher3Handler : BaseHook() {
             return
         }
         mToBeKilled = null
-        val task = v.getObjectOrNull("mTask")
-        val key = task?.getObjectOrNull("key")
-        val user = key?.getObjectOrNull("userId") as? Int
-        val topActivity = key?.getObjectOrNull("topActivity") as? ComponentName
-        if (user != null && topActivity != null) {
-            runCatching {
-                ActivityManagerApis.forceStopPackage(topActivity.packageName, user)
-            }.onSuccess {
+        runCatching {
+            val task = XposedHelpers.getObjectField(v, "mTask")
+            val key = XposedHelpers.getObjectField(task, "key")
+            val user = XposedHelpers.getObjectField(key, "userId") as? Int ?: 0
+            val topActivity = XposedHelpers.getObjectField(key, "topActivity") as? ComponentName
+            if (topActivity != null) {
+                XposedHelpers.callMethod(ams, "forceStopPackage", topActivity.packageName, user)
                 Toast.makeText(v.context, "killed ${topActivity.packageName}", Toast.LENGTH_SHORT).show()
-            }.onFailure {
-                Toast.makeText(v.context, "killed ${topActivity.packageName} failed", Toast.LENGTH_SHORT).show()
-                Log.e(TAG, "onChildDismissedEnd: ", it)
             }
-        } else {
-            Log.e(TAG, "Failed to get userId or topActivity")
+        }.onFailure {
+            Toast.makeText(v.context, "killed failed", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "onChildDismissedEnd: ", it)
         }
     }
 }
