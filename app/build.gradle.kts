@@ -48,7 +48,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "$gitCommitCount-$gitCommitHash"
-        setProperty("archivesBaseName", "MyInjector-$versionName")
+        setProperty("archivesBaseName", "KTASTOP-$versionName")
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "arm64-v8a"
