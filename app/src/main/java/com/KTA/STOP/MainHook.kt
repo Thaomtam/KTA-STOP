@@ -1,7 +1,7 @@
 package com.KTA.STOP
 
 import com.KTA.STOP.hook.BaseHook
-import com.KTA.STOP.hook.Launcher3Hook
+import com.KTA.STOP.hook.Launcher3Handler // Sửa tên class cho đồng bộ
 import com.github.kyuubiran.ezxhelper.init.EzXHelperInit
 import com.github.kyuubiran.ezxhelper.utils.Log
 import com.github.kyuubiran.ezxhelper.utils.Log.logexIfThrow
@@ -18,7 +18,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             EzXHelperInit.initHandleLoadPackage(lpparam)
             EzXHelperInit.setLogTag(TAG)
             EzXHelperInit.setToastTag(TAG)
-            initHooks(Launcher3Hook)
+            initHooks(Launcher3Handler()) // Khởi tạo instance của Launcher3Handler
         }
     }
 
