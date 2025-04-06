@@ -1,10 +1,8 @@
 package com.KTA.STOP.hook
 
-import android.app.IActivityManager
 import android.content.ComponentName
 import android.os.Handler
 import android.os.Looper
-import android.os.ServiceManager
 import android.util.Log
 import android.view.View
 import android.widget.TextView
@@ -12,6 +10,7 @@ import android.widget.Toast
 import com.github.kyuubiran.ezxhelper.utils.findMethod
 import com.github.kyuubiran.ezxhelper.utils.hookAfter
 import de.robv.android.xposed.XC_MethodHook
+import rikka.hidden.compat.ActivityManagerApis
 
 class Launcher3Handler : BaseHook() {
     companion object {
@@ -80,7 +79,6 @@ class Launcher3Handler : BaseHook() {
     private var origText: CharSequence? = null
     private var setViewHeaderRunnable = Runnable { setupToBeKilled() }
     private var mToBeKilled: View? = null
-    private val ams by lazy { IActivityManager.Stub.asInterface(ServiceManager.getService("activity")) }
 
     private fun findDismissView(): TextView {
         val headerView = mCurrentView?.getObjectField("mHeaderView")
@@ -122,14 +120,14 @@ class Launcher3Handler : BaseHook() {
         val key = task.getObjectField("key")
         val user = key.getObjectField("userId") as Int
         val topActivity = key.getObjectField("topActivity") as ComponentName
-        runCatching { ams.forceStopPackage(topActivity.packageName, user) }
-            .onSuccess {
-                Toast.makeText(v.context, "killed ${topActivity.packageName}", Toast.LENGTH_SHORT).show()
-            }
-            .onFailure {
-                Toast.makeText(v.context, "killed ${topActivity.packageName} failed", Toast.LENGTH_SHORT).show()
-                Log.e(TAG, "onChildDismissedEnd: ", it)
-            }
+        runCatching {
+            ActivityManagerApis.forceStopPackage(topActivity.packageName, user)
+        }.onSuccess {
+            Toast.makeText(v.context, "killed ${topActivity.packageName}", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(v.context, "killed ${topActivity.packageName} failed", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "onChildDismissedEnd: ", it)
+        }
     }
 
     private fun Any.getObjectField(fieldName: String): Any? {
