@@ -1,5 +1,4 @@
 [versions]
-dexkit = "2.0.1"
 kotlin = "2.1.10"
 agp = "8.8.0"
 xposed = "82"
@@ -8,7 +7,6 @@ hidden-api = "4.3.3"
 ezxhelper = "1.0.3"
 
 [libraries]
-dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 xposed-api = { module = "de.robv.android.xposed:api", version.ref = "xposed" }
 androidx-annotation = { module = "androidx.annotation:annotation-jvm", version.ref = "annotation" }
 dev-rikka-hidden-compat = { module = "dev.rikka.hidden:compat", version.ref = "hidden-api" }
