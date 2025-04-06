@@ -11,11 +11,9 @@ import android.widget.TextView
 import android.widget.Toast
 import com.github.kyuubiran.ezxhelper.utils.findMethod
 import com.github.kyuubiran.ezxhelper.utils.hookAfter
-import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.callbacks.XC_LoadPackage
 
-class Launcher3Handler : IXposedHookLoadPackage {
+class Launcher3Handler : BaseHook() {
     companion object {
         private const val TAG = "MyInjector-Launcher3Handler"
     }
@@ -26,38 +24,36 @@ class Launcher3Handler : IXposedHookLoadPackage {
     private var hookDismiss: XC_MethodHook.Unhook? = null
     private var hookCancel: XC_MethodHook.Unhook? = null
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        if (lpparam.packageName != "com.android.launcher3") return
-
-        Log.d(TAG, "handleLoadPackage: hooked Launcher3")
+    override fun init() {
+        Log.d(TAG, "init: hooked Launcher3")
         runCatching {
             // Hook onBeginDrag
-            hookBeginDrag = findMethod(taskViewClass, lpparam.classLoader) {
-                name == "onTouchEvent" // Xác nhận chính xác
+            hookBeginDrag = findMethod(taskViewClass) {
+                name == "onTouchEvent"
             }.hookAfter { param ->
                 val view = param.args[0] as View
                 onBeginDrag(view)
             }
 
             // Hook onDragEnd
-            hookDragEnd = findMethod(taskViewClass, lpparam.classLoader) {
-                name == "onTouchEvent" // Xác nhận chính xác
+            hookDragEnd = findMethod(taskViewClass) {
+                name == "onTouchEvent"
             }.hookAfter { param ->
                 val view = param.args[0] as View
                 onDragEnd(view)
             }
 
             // Hook onChildDismissedEnd
-            hookDismiss = findMethod(taskViewClass, lpparam.classLoader) {
-                name == "dismissTask" // Sửa từ startDismissTask thành dismissTask
+            hookDismiss = findMethod(taskViewClass) {
+                name == "dismissTask"
             }.hookAfter { param ->
                 val view = param.thisObject as View
                 onChildDismissedEnd(view)
             }
 
             // Hook onDragCancelled
-            hookCancel = findMethod(taskViewClass, lpparam.classLoader) {
-                name == "onTouchEvent" // Xác nhận chính xác
+            hookCancel = findMethod(taskViewClass) {
+                name == "onTouchEvent"
             }.hookAfter { param ->
                 val view = param.args[0] as View
                 onDragCancelled(view)
