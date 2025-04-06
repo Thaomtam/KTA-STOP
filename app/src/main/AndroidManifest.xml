@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Quyền kiểm soát và buộc dừng ứng dụng -->
+    <uses-permission android:name="android.permission.GET_TASKS" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" tools:ignore="ProtectedPermissions" />
+    <!-- Quyền truy vấn tất cả package -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -13,7 +23,7 @@
             android:value="@string/xposed_desc" />
         <meta-data
             android:name="xposedminversion"
-            android:value="54" />
+            android:value="82" />
         <!-- xposed-scope here -->
         <meta-data
             android:name="xposedscope"
