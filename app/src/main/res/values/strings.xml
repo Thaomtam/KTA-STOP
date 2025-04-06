@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">KTASTOP</string>
+    <string name="xposed_desc">Buộc dừng ứng dụng tự động</string>
+</resources>
