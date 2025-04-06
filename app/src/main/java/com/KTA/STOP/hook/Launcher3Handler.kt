@@ -9,6 +9,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.github.kyuubiran.ezxhelper.utils.findMethod
 import com.github.kyuubiran.ezxhelper.utils.hookAfter
+import com.github.kyuubiran.ezxhelper.utils.getObjectOrNull
 import de.robv.android.xposed.XC_MethodHook
 import rikka.hidden.compat.ActivityManagerApis
 
@@ -81,26 +82,39 @@ class Launcher3Handler : BaseHook() {
     private var mToBeKilled: View? = null
 
     private fun findDismissView(): TextView {
-        val headerView = mCurrentView?.getObjectField("mHeaderView")
-        return headerView?.getObjectField("mDismissView") as TextView
+        val headerView = mCurrentView?.getObjectOrNull("mHeaderView") // Trả về Any? hoặc null
+        val dismissView = headerView?.getObjectOrNull("mDismissView") // Trả về Any? hoặc null
+        return dismissView as? TextView ?: throw IllegalStateException("Dismiss view not found or not a TextView")
     }
 
     private fun setupToBeKilled() {
         mCurrentView ?: return
-        findDismissView().text = "停止进程"
-        mToBeKilled = mCurrentView
+        runCatching {
+            findDismissView().text = "停止进程"
+            mToBeKilled = mCurrentView
+        }.onFailure {
+            Log.e(TAG, "Failed to setup to be killed", it)
+        }
     }
 
     private fun onBeginDrag(v: View) {
         mCurrentView = v
         mToBeKilled = null
-        origText = findDismissView().text
-        handler.postDelayed(setViewHeaderRunnable, 700)
+        runCatching {
+            origText = findDismissView().text
+            handler.postDelayed(setViewHeaderRunnable, 700)
+        }.onFailure {
+            Log.e(TAG, "Failed in onBeginDrag", it)
+        }
     }
 
     private fun onDragEnd(v: View) {
         handler.removeCallbacks(setViewHeaderRunnable)
-        if (origText != null) findDismissView().text = origText
+        runCatching {
+            if (origText != null) findDismissView().text = origText
+        }.onFailure {
+            Log.e(TAG, "Failed in onDragEnd", it)
+        }
         mCurrentView = null
         origText = null
     }
@@ -116,21 +130,21 @@ class Launcher3Handler : BaseHook() {
             return
         }
         mToBeKilled = null
-        val task = v.getObjectField("mTask")
-        val key = task.getObjectField("key")
-        val user = key.getObjectField("userId") as Int
-        val topActivity = key.getObjectField("topActivity") as ComponentName
-        runCatching {
-            ActivityManagerApis.forceStopPackage(topActivity.packageName, user)
-        }.onSuccess {
-            Toast.makeText(v.context, "killed ${topActivity.packageName}", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(v.context, "killed ${topActivity.packageName} failed", Toast.LENGTH_SHORT).show()
-            Log.e(TAG, "onChildDismissedEnd: ", it)
+        val task = v.getObjectOrNull("mTask")
+        val key = task?.getObjectOrNull("key")
+        val user = key?.getObjectOrNull("userId") as? Int
+        val topActivity = key?.getObjectOrNull("topActivity") as? ComponentName
+        if (user != null && topActivity != null) {
+            runCatching {
+                ActivityManagerApis.forceStopPackage(topActivity.packageName, user)
+            }.onSuccess {
+                Toast.makeText(v.context, "killed ${topActivity.packageName}", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(v.context, "killed ${topActivity.packageName} failed", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "onChildDismissedEnd: ", it)
+            }
+        } else {
+            Log.e(TAG, "Failed to get userId or topActivity")
         }
-    }
-
-    private fun Any.getObjectField(fieldName: String): Any? {
-        return com.github.kyuubiran.ezxhelper.utils.getObjectOrNull(this, fieldName)
     }
 }
