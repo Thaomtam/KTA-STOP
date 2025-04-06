@@ -112,25 +112,6 @@ kotlin {
     jvmToolchain(17)
 }
 
-protobuf {
-    protoc {
-        artifact = libs.protobuf.protoc.get().toString()
-    }
-
-    generateProtoTasks {
-        all().forEach { task ->
-            task.builtins {
-                id("java") {
-                    option("lite")
-                }
-                id("kotlin") {
-                    option("lite")
-                }
-            }
-        }
-    }
-}
-
 dependencies {
     compileOnly(libs.xposed.api)
     implementation(libs.dexkit)
