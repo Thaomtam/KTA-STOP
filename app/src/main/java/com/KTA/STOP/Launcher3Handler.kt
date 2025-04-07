@@ -1,4 +1,4 @@
-package com.KTA.STOP
+package com.KTA.STOP // Ensure this matches your actual package structure
 
 import android.app.ActivityManager // Keep for potential future use if needed, but IActivityManager is used directly
 import android.content.ComponentName
@@ -22,26 +22,24 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import java.io.File // Keep, although not directly used in this logic, maybe for future expansion
 import java.lang.ref.WeakReference // Use WeakReference for Context to avoid leaks
+
+// Import HiddenApiBypass - Make sure this import is correct based on your project setup
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 class Launcher3Handler : IXposedHookLoadPackage {
     companion object {
-        private const val TAG = "MyInjector-Launcher3Handler"
-        // Use a more specific prefs name if this module handles other things too
-        private const val PREFS_NAME = "myinjector_launcher3_prefs"
+        private const val TAG = "KTASTOP-Launcher3Handler"
+        private const val PREFS_NAME = "KTASTOP_launcher3_prefs"
         private const val KEY_EXCEPTION_LIST = "exception_list"
-        private const val KEY_ENABLE_FORCE_STOP = "enableForceStop" // Define key constant
-        private const val LONG_PRESS_TIMEOUT_MS = 250L // Configurable long press duration
+        private const val KEY_ENABLE_FORCE_STOP = "enableForceStop"
+        private const val LONG_PRESS_TIMEOUT_MS = 300L // Adjusted slightly, configure as needed
 
         // Default protected system packages
-        // Added common Google packages and potentially sensitive apps
         private val DEFAULT_SYSTEM_PACKAGES = setOf(
             "android",
+			"com.zing.zalo",
             "com.android.systemui",
-            "com.android.launcher", // Common alternative launcher package name
-            "com.android.launcher3", // Target package itself
-            "com.google.android.apps.nexuslauncher", // Pixel Launcher
             "com.android.settings",
             "com.android.phone",
             "com.android.shell",
@@ -53,78 +51,109 @@ class Launcher3Handler : IXposedHookLoadPackage {
             "com.android.providers.telephony",
             "com.android.bluetooth",
             "com.android.nfc",
-            "com.zing.zalo", // Example third-party app (keep if needed)
             "com.google.android.gms", // Google Play Services
             "com.google.android.gsf", // Google Services Framework
             "com.android.vending", // Google Play Store
             "com.android.inputmethod.latin", // AOSP Keyboard
-            "com.google.android.inputmethod.latin" // Gboard
+            "com.google.android.inputmethod.latin", // Gboard
+            // Add launchers to prevent self-kill issues
+            "com.android.launcher3", // Target package itself
+            "com.google.android.apps.nexuslauncher" // Pixel Launcher
             // Add more critical system/input method packages as needed
         )
     }
 
-    // Use WeakReference to Context to avoid potential memory leaks
     private var contextRef: WeakReference<Context>? = null
     private var prefs: SharedPreferences? = null
     private var exceptionList: MutableSet<String> = mutableSetOf()
     private var enableForceStop: Boolean = true
-
-    // Main thread handler for timed operations (long press)
     private val handler = Handler(Looper.getMainLooper())
-    // References to views involved in touch/kill process
     private var currentTouchedView: View? = null
     private var viewMarkedForKill: View? = null
-    // Runnable for detecting long press completion
     private var longPressRunnable: Runnable? = null
 
-    // Lazily initialize IActivityManager using reflection
-    // Cache the result for efficiency
+    // Lazily initialize IActivityManager using reflection & HiddenApiBypass
     private val iActivityManager: Any? by lazy {
         try {
+            // Ensure HiddenApiBypass allows access if needed for getting the service/stub
+            // (Usually ServiceManager is okay, but Stub might be restricted)
+            Log.d(TAG, "Attempting to get IActivityManager...")
             val amServiceBinder = ServiceManager.getService(Context.ACTIVITY_SERVICE) as IBinder?
             if (amServiceBinder == null) {
                 Log.e(TAG, "Failed to get ActivityService binder.")
                 return@lazy null
             }
-            // Find the IActivityManager$Stub class (works across Android versions)
-            val stubClass = XposedHelpers.findClass("android.app.IActivityManager\$Stub", null)
+            val stubClass = XposedHelpers.findClass("android.app.IActivityManager\$Stub", null) // Use context classloader if available? Usually null works for system classes.
             val asInterfaceMethod = stubClass.getDeclaredMethod("asInterface", IBinder::class.java)
-            asInterfaceMethod.invoke(null, amServiceBinder)
-        } catch (e: Throwable) { // Catch Throwable for broader error capture
+            val instance = asInterfaceMethod.invoke(null, amServiceBinder)
+            Log.i(TAG, "Successfully obtained IActivityManager instance.")
+            instance
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to get IActivityManager instance via reflection", e)
             null
         }
     }
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        // Check target package name (consider variations if needed)
-        if (lpparam.packageName != "com.android.launcher3") {
-             // Log if you want to know about other packages being loaded by Xposed
-             // Log.v(TAG, "Ignoring package: ${lpparam.packageName}")
-             return
+        // Target specific launcher packages
+        // Add other launcher package names if needed (e.g., Pixel Launcher)
+        val targetPackages = setOf("com.android.launcher3", "com.google.android.apps.nexuslauncher")
+        if (lpparam.packageName !in targetPackages) {
+            return
         }
 
-        Log.i(TAG, "Hooking into Launcher3 package: ${lpparam.packageName}")
+        Log.i(TAG, "Hooking into Launcher package: ${lpparam.packageName}")
+
+        // --- Add Hidden API Exemptions ---
+        // Call this early, before accessing restricted APIs.
+        // We primarily need access to IActivityManager methods.
+        // Add exemptions generously for related classes if experiencing issues.
+        try {
+            Log.d(TAG, "Attempting to bypass Hidden API restrictions...")
+            val exempted = HiddenApiBypass.addHiddenApiExemptions(
+                "Landroid/app/IActivityManager;", // Main interface for forceStopPackage
+                "Landroid/app/ActivityManager;", // Related concrete class, internals might be used
+                "Landroid/app/IActivityManager\$Stub;", // For the asInterface method
+                "Landroid/os/ServiceManager;" // For getService
+                // Add more if specific errors point to other restricted classes/methods
+                // Examples from user query (adjust if actually needed):
+                // "Landroid/content/pm/ApplicationInfo;",
+                // "Ldalvik/system",
+                // "Lx" // Be careful with wildcard prefixes like this
+            )
+            if (exempted) {
+                Log.i(TAG, "Successfully added Hidden API exemptions.")
+            } else {
+                Log.w(TAG, "Failed to add Hidden API exemptions (or bypass not needed/supported).")
+                // Continue anyway, it might work on older Android or without strict enforcement
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error occurred during HiddenApiBypass setup", e)
+            // Show a persistent warning? This might prevent the core feature from working.
+            // Toast might not be possible here yet if context isn't available.
+        }
+        // --- End Hidden API Exemptions ---
+
 
         // Centralized error handling for hooks
         runCatching {
             // Find classes using the provided ClassLoader
+            // Class names might differ slightly in variants (e.g., Pixel Launcher)
+            // Consider making these class names configurable or adding checks if issues arise.
             val recentsViewClass = XposedHelpers.findClass("com.android.quickstep.views.RecentsView", lpparam.classLoader)
             val taskViewClass = XposedHelpers.findClass("com.android.quickstep.views.TaskView", lpparam.classLoader)
 
             // --- Hook Task Dismissal ---
             findMethod(recentsViewClass) {
-                // Be slightly more specific if multiple methods have similar names/params
-                name == "dismissTask" && parameterTypes.size == 1 // Assuming one argument (TaskView or similar)
+                name == "dismissTask" // Check parameters if ambiguous
+                // Example: parameterTypes.size == 1 && parameterTypes[0].isAssignableFrom(taskViewClass)
             }.hookBefore { param ->
                 val dismissedTaskView = param.args[0] as? View
                 if (dismissedTaskView == null) {
                     Log.w(TAG, "dismissTask hook: Argument is not a View or is null")
                     return@hookBefore
                 }
-                // Ensure preferences are initialized (only needs to happen once)
-                initPreferencesIfNeeded(dismissedTaskView.context)
-                // Handle the dismissal logic
+                initPreferencesIfNeeded(dismissedTaskView.context) // Ensure prefs init
                 onTaskDismissed(dismissedTaskView)
             }
             Log.d(TAG, "Hooked RecentsView.dismissTask")
@@ -135,12 +164,8 @@ class Launcher3Handler : IXposedHookLoadPackage {
             }.hookBefore { param ->
                 val taskView = param.thisObject as View
                 val motionEvent = param.args[0] as MotionEvent
-
-                // Ensure preferences are initialized
-                initPreferencesIfNeeded(taskView.context)
-
-                // Process touch actions
-                when (motionEvent.actionMasked) { // Use actionMasked for pointer events
+                initPreferencesIfNeeded(taskView.context) // Ensure prefs init
+                when (motionEvent.actionMasked) {
                     MotionEvent.ACTION_DOWN -> onTaskTouchDown(taskView)
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onTaskTouchUp(taskView)
                 }
@@ -148,381 +173,351 @@ class Launcher3Handler : IXposedHookLoadPackage {
             Log.d(TAG, "Hooked TaskView.onTouchEvent")
 
         }.onFailure { error ->
-            Log.e(TAG, "Failed to set up hooks in Launcher3", error)
-            // Maybe show a persistent error notification if hooks fail critically?
+            Log.e(TAG, "Failed to set up hooks in ${lpparam.packageName}", error)
+            // Consider a more visible error notification if hooks fail
         }
     }
 
-    /**
-     * Initializes SharedPreferences and loads settings if not already done.
-     * Uses WeakReference to context.
-     */
-    @Synchronized // Ensure thread safety during initialization
+    @Synchronized
     private fun initPreferencesIfNeeded(context: Context) {
-        // Check if already initialized or if context is invalid
         if (prefs != null && contextRef?.get() != null) {
             return
         }
-
         Log.d(TAG, "Initializing preferences...")
-        val appContext = context.applicationContext // Use application context
+        // Use application context to avoid leaking Activity/View contexts
+        val appContext = context.applicationContext
         contextRef = WeakReference(appContext)
+        // Make SharedPreferences world-readable if a separate settings UI needs to access it
+        // MODE_WORLD_READABLE is deprecated, use ContentProvider or other IPC if needed.
+        // For internal use, MODE_PRIVATE is fine.
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-        // Load initial settings
-        loadSettings()
+        loadSettings() // Load initial values
 
-        // Register listener for changes (only register once)
+        // Register listener only once
         prefs?.registerOnSharedPreferenceChangeListener(settingsChangeListener)
         Log.i(TAG, "Preferences initialized and listener registered.")
     }
 
-    /**
-     * Listener for changes in SharedPreferences.
-     */
     private val settingsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
         Log.d(TAG, "SharedPreferences changed: key='$key'")
         when (key) {
             KEY_ENABLE_FORCE_STOP -> {
                 enableForceStop = sharedPreferences.getBoolean(key, true)
-                Log.i(TAG, "Force stop feature toggled: $enableForceStop")
-                // If feature disabled, cancel any pending long press
+                Log.i(TAG, "Force stop feature toggled via settings: $enableForceStop")
                 if (!enableForceStop) {
-                    cancelLongPress()
+                    cancelLongPress() // Cancel any pending action if disabled
                 }
             }
             KEY_EXCEPTION_LIST -> {
-                loadExceptionList() // Reload the exception list
-                Log.i(TAG, "Exception list reloaded. New size: ${exceptionList.size}")
+                loadExceptionList() // Reload the list
+                Log.i(TAG, "Exception list reloaded via settings. New size: ${exceptionList.size}")
             }
         }
     }
 
-    /**
-     * Loads settings (exception list and enable flag) from SharedPreferences.
-     */
     private fun loadSettings() {
         prefs?.let { p ->
             enableForceStop = p.getBoolean(KEY_ENABLE_FORCE_STOP, true)
-            loadExceptionList() // Separate loading the list
-            Log.d(TAG, "Initial settings loaded: enableForceStop=$enableForceStop, exceptionList size=${exceptionList.size}")
+            loadExceptionList() // Load/reload the exception list
+            Log.d(TAG, "Settings loaded: enableForceStop=$enableForceStop, exceptionList size=${exceptionList.size}")
         } ?: run {
             Log.e(TAG, "Cannot load settings, SharedPreferences is null.")
-            // Set defaults if prefs are somehow null after init attempt
+            // Fallback to defaults if prefs fail unexpectedly
             enableForceStop = true
             exceptionList = DEFAULT_SYSTEM_PACKAGES.toMutableSet()
         }
     }
 
-
-    /**
-     * Loads the exception list from SharedPreferences and adds default system apps.
-     */
     private fun loadExceptionList() {
         val savedList = prefs?.getStringSet(KEY_EXCEPTION_LIST, emptySet()) ?: emptySet()
-        // Create a new mutable set from the loaded and default lists
+        // Always combine saved list with the default system packages
         exceptionList = mutableSetOf<String>().apply {
             addAll(savedList)
-            addAll(DEFAULT_SYSTEM_PACKAGES) // Always include defaults
+            addAll(DEFAULT_SYSTEM_PACKAGES)
         }
-        // Log.v(TAG, "Loaded exception list: $exceptionList") // Verbose logging if needed
+        // Log.v(TAG, "Loaded exception list: $exceptionList") // Verbose
     }
 
-    /**
-     * Checks if a package name is in the combined (user + default) exception list.
-     */
     private fun isPackageInExceptionList(packageName: String?): Boolean {
-        if (packageName.isNullOrEmpty()) return false // Cannot exclude null/empty
+        if (packageName.isNullOrEmpty()) return false
+        // Perform case-insensitive check? Package names are generally case-sensitive, but good practice? Let's keep it sensitive.
         return exceptionList.contains(packageName)
     }
 
     // --- Touch Event Handling ---
 
-    /**
-     * Called when a TaskView touch begins (ACTION_DOWN).
-     * Schedules the long press check.
-     */
     private fun onTaskTouchDown(view: View) {
-        // If force stop is disabled, do nothing
         if (!enableForceStop) return
-
-        // Cancel any previously scheduled long press runnable
-        cancelLongPress()
-
-        // Store the currently touched view
+        cancelLongPress() // Cancel previous one if any
         currentTouchedView = view
-        // Clear the "to be killed" flag from previous interactions
-        viewMarkedForKill = null
-        // Reset any visual cues on previously marked views if necessary (optional)
+        viewMarkedForKill = null // Clear previous kill mark
 
-        // Create and schedule the long press runnable
         longPressRunnable = Runnable { setupTaskForKill() }
         handler.postDelayed(longPressRunnable!!, LONG_PRESS_TIMEOUT_MS)
         // Log.v(TAG, "ACTION_DOWN on view. Scheduled long press check.")
     }
 
-    /**
-     * Called when a TaskView touch ends (ACTION_UP or ACTION_CANCEL).
-     * Cancels the pending long press check.
-     */
     private fun onTaskTouchUp(view: View) {
-        // Cancel the scheduled long press check regardless of feature state
         cancelLongPress()
         // Log.v(TAG, "ACTION_UP/CANCEL on view. Cancelled long press check.")
-
-        // Optional: Reset visual state if the view wasn't marked for killing
-        // This is less critical as the view might be dismissed anyway
-        // if (viewMarkedForKill != view) {
-        //     resetDismissViewText(view) // Example: Reset text if changed
-        // }
-
-        // Clear the reference to the touched view
-        currentTouchedView = null
+        // Optional: Reset visual state if needed, but view is often removed or recycled quickly.
+        currentTouchedView = null // Clear reference on touch release
     }
 
-    /**
-     * Cancels the pending long press runnable and cleans up references.
-     */
     private fun cancelLongPress() {
         longPressRunnable?.let { handler.removeCallbacks(it) }
         longPressRunnable = null
-        // currentTouchedView = null // Keep currentTouchedView until UP/CANCEL
+        // Don't clear currentTouchedView here, wait for ACTION_UP/CANCEL
     }
 
     // --- Core Logic ---
 
-    /**
-     * Called by the longPressRunnable after the timeout.
-     * Marks the current task view for potential force-stopping upon dismissal.
-     */
     private fun setupTaskForKill() {
-        // Clear the runnable reference as it has executed
-        longPressRunnable = null
-
-        // Check if the feature is still enabled and if we have a view
+        longPressRunnable = null // Runnable has executed
         if (!enableForceStop || currentTouchedView == null) {
-            Log.d(TAG, "setupTaskForKill: Aborted (feature disabled or view is null)")
+            Log.d(TAG, "setupTaskForKill: Aborted (feature disabled or view gone)")
+            currentTouchedView = null // Ensure clean state
             return
         }
 
-        val view = currentTouchedView!! // We know it's not null here
-        val context = view.context ?: contextRef?.get() // Get context safely
-
-        // Extract package info
+        val view = currentTouchedView!!
+        val context = view.context ?: contextRef?.get()
         val taskInfo = getTaskInfo(view)
 
-        // Check if the package is protected
-        if (taskInfo != null && isPackageInExceptionList(taskInfo.packageName)) {
+        if (taskInfo == null) {
+             Log.w(TAG, "setupTaskForKill: Could not get TaskInfo for the touched view.")
+             context?.let { Toast.makeText(it, "Lỗi: Không thể lấy thông tin ứng dụng", Toast.LENGTH_SHORT).show() }
+             currentTouchedView = null // Abort if info unavailable
+             return
+        }
+
+        // Check protection list
+        if (isPackageInExceptionList(taskInfo.packageName)) {
             Log.d(TAG, "setupTaskForKill: Package '${taskInfo.packageName}' is protected.")
             context?.let {
-                Toast.makeText(it, "Ứng dụng \"${taskInfo.packageName}\" được bảo vệ", Toast.LENGTH_SHORT).show()
+                // Provide more context in the toast
+                val appLabel = getAppLabel(context, taskInfo.packageName)
+                Toast.makeText(it, "Không thể dừng: \"$appLabel\" (${taskInfo.packageName}) được bảo vệ", Toast.LENGTH_SHORT).show()
             }
-            // Don't mark for kill if protected
-            currentTouchedView = null // Clear reference as long press failed validation
+            currentTouchedView = null // Clear reference as action is blocked
             return
         }
 
-        // Mark this view for killing
+        // Mark for kill and provide feedback
         viewMarkedForKill = view
-        Log.i(TAG, "setupTaskForKill: Marked view for package '${taskInfo?.packageName ?: "unknown"}' for kill.")
-
-        // Provide visual feedback
+        Log.i(TAG, "setupTaskForKill: Marked view for package '${taskInfo.packageName}' for potential kill.")
         context?.let {
-            Toast.makeText(it, "Vuốt lên để dừng ứng dụng", Toast.LENGTH_SHORT).show()
-            // Optional: Try changing the dismiss button text (might be fragile)
-            changeDismissViewText(view, "Dừng ứng dụng")
+            val appLabel = getAppLabel(context, taskInfo.packageName)
+            Toast.makeText(it, "Vuốt lên để dừng \"$appLabel\"", Toast.LENGTH_SHORT).show()
+            changeDismissViewText(view, "Force Stop") // Optional visual cue (fragile)
         }
+        // Don't clear currentTouchedView here, wait for ACTION_UP/CANCEL
     }
 
-    /**
-     * Called when a task view is about to be dismissed (swiped away).
-     * Checks if the view was marked for killing and performs the force-stop if conditions met.
-     */
     private fun onTaskDismissed(view: View) {
-        // Check if the feature is enabled and if this is the view we marked
+        // Check if the feature is enabled AND if this specific view was the one marked
         if (!enableForceStop || viewMarkedForKill != view) {
-            // Log.v(TAG, "onTaskDismissed: Ignoring dismissal (feature disabled or view not marked)")
-            // Reset the kill flag if it wasn't the marked view being dismissed (edge case safety)
-            if (viewMarkedForKill == view) viewMarkedForKill = null
-            return
+            // If a marked view exists but *this* dismissed view isn't it, clear the mark (edge case safety)
+            if (viewMarkedForKill != null && viewMarkedForKill != view) {
+                 Log.w(TAG, "onTaskDismissed: Dismissed view was not the one marked for kill. Clearing mark.")
+                 viewMarkedForKill = null
+            }
+            return // Ignore dismissal
         }
 
         Log.d(TAG, "onTaskDismissed: Intercepted dismissal for marked view.")
-        // Reset the flag immediately
-        val viewToKill = viewMarkedForKill
-        viewMarkedForKill = null
+        val viewToKill = viewMarkedForKill // Local copy for clarity
+        viewMarkedForKill = null // Reset the flag *immediately*
 
         val context = view.context ?: contextRef?.get()
-
-        // Get task info again (or cache it if reliable)
-        val taskInfo = getTaskInfo(viewToKill)
+        val taskInfo = getTaskInfo(viewToKill) // Get info again
 
         if (taskInfo == null) {
             Log.e(TAG, "onTaskDismissed: Failed to get TaskInfo for the view to kill.")
-            context?.let { Toast.makeText(it, "Lỗi: Không thể lấy thông tin ứng dụng", Toast.LENGTH_SHORT).show() }
+            context?.let { Toast.makeText(it, "Lỗi: Không thể lấy thông tin ứng dụng để dừng", Toast.LENGTH_SHORT).show() }
             return
         }
 
-        // Final check against exception list (safety net)
+        // Final protection check (safety net)
         if (isPackageInExceptionList(taskInfo.packageName)) {
             Log.w(TAG, "onTaskDismissed: Package '${taskInfo.packageName}' is protected (final check). Aborting kill.")
-            context?.let { Toast.makeText(it, "Ứng dụng \"${taskInfo.packageName}\" được bảo vệ", Toast.LENGTH_SHORT).show() }
+             context?.let {
+                val appLabel = getAppLabel(context, taskInfo.packageName)
+                Toast.makeText(it, "Đã hủy dừng: \"$appLabel\" được bảo vệ", Toast.LENGTH_SHORT).show()
+            }
             return
         }
 
-        // Perform the force stop
+        // --- Perform Force Stop ---
+        val am = iActivityManager // Use the cached instance
+        if (am == null) {
+            Log.e(TAG, "onTaskDismissed: IActivityManager is null, cannot force stop.")
+            context?.let { Toast.makeText(it, "Lỗi: Không thể truy cập Activity Manager", Toast.LENGTH_SHORT).show() }
+            return
+        }
+
         try {
-            val am = iActivityManager
-            if (am == null) {
-                 Log.e(TAG, "onTaskDismissed: IActivityManager is null, cannot force stop.")
-                 context?.let { Toast.makeText(it, "Lỗi: Không thể truy cập Activity Manager", Toast.LENGTH_SHORT).show() }
-                 return
-            }
             Log.i(TAG, "Attempting to force stop package: ${taskInfo.packageName}, userId: ${taskInfo.userId}")
-            // Call forceStopPackage using reflection
+
+            // Call forceStopPackage using reflection - HiddenApiBypass should allow this
             XposedHelpers.callMethod(am, "forceStopPackage", taskInfo.packageName, taskInfo.userId)
 
-            // Success feedback
-            Log.i(TAG, "Successfully force stopped package: ${taskInfo.packageName}")
+            Log.i(TAG, "Successfully requested force stop for package: ${taskInfo.packageName}")
             context?.let {
-                Toast.makeText(it, "Đã dừng ứng dụng: ${taskInfo.packageName}", Toast.LENGTH_SHORT).show()
+                val appLabel = getAppLabel(context, taskInfo.packageName)
+                Toast.makeText(it, "Đã dừng ứng dụng: $appLabel", Toast.LENGTH_SHORT).show()
             }
 
-        } catch (e: Throwable) {
+        } catch (e: SecurityException) {
+             Log.e(TAG, "SecurityException force stopping package: ${taskInfo.packageName}. Check permissions or Hidden API bypass.", e)
+             context?.let { Toast.makeText(it, "Lỗi quyền khi dừng: ${taskInfo.packageName}", Toast.LENGTH_SHORT).show() }
+        } catch (e: Throwable) { // Catch broader errors
             Log.e(TAG, "Error force stopping package: ${taskInfo.packageName}", e)
-            context?.let {
-                Toast.makeText(it, "Lỗi khi dừng ứng dụng: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        } finally {
-            // Optional: Reset dismiss text if it was changed (though view is disappearing)
-            // resetDismissViewText(viewToKill)
+            context?.let { Toast.makeText(it, "Lỗi khi dừng ứng dụng: ${e.message}", Toast.LENGTH_SHORT).show() }
         }
     }
 
     // --- Helper Functions ---
 
-    /**
-     * Data class to hold extracted task information.
-     */
     private data class TaskInfo(val packageName: String?, val userId: Int, val componentName: ComponentName?)
 
-    /**
-     * Extracts TaskInfo (package name, user ID, component name) from a TaskView.
-     * Handles potential reflection errors.
-     */
     private fun getTaskInfo(taskView: View?): TaskInfo? {
         if (taskView == null) return null
         return try {
-            // Get the Task object associated with the TaskView
-            // Method name might vary ('getTask', 'getTaskInfo', etc.) - Requires inspection of Launcher3 source/decompiled code
+            // Reflection targets - these might need adjustment for different Launcher3 versions/variants
             val taskObject = XposedHelpers.callMethod(taskView, "getTask") ?: return null
-
-            // Get the Task.TaskKey object
-            // Field/method name might be 'key', 'mKey', 'getTaskKey'
-            val taskKeyObject = XposedHelpers.getObjectField(taskObject, "key") ?: XposedHelpers.callMethod(taskObject, "getKey") ?: return null
-
-            // Extract ComponentName and userId from the TaskKey
-            // Field/method names might be 'componentName'/'getComponent', 'userId'/'getUserId'
-            val componentName = XposedHelpers.getObjectField(taskKeyObject, "componentName") as? ComponentName
-                                ?: XposedHelpers.callMethod(taskKeyObject, "getComponent") as? ComponentName
-
+            // Try common names for the key field/method
+            val taskKeyObject = XposedHelpers.getObjectField(taskObject, "key")
+                ?: XposedHelpers.callMethod(taskObject, "getKey")
+                ?: return null
+            // Try common names for componentName field/method
+            val componentName = (XposedHelpers.getObjectField(taskKeyObject, "componentName") as? ComponentName)
+                ?: (XposedHelpers.callMethod(taskKeyObject, "getComponent") as? ComponentName)
+            // Try common names for userId field/method
             val userId = (XposedHelpers.getObjectField(taskKeyObject, "userId") as? Int)
-                         ?: (XposedHelpers.callMethod(taskKeyObject, "getUserId") as? Int)
-                         ?: 0 // Default to 0 if not found
+                ?: (XposedHelpers.callMethod(taskKeyObject, "getUserId") as? Int)
+                ?: 0 // Default to user 0 if not found
 
             val packageName = componentName?.packageName
 
-            if (packageName == null) {
-                 Log.w(TAG, "getTaskInfo: Could not determine package name from ComponentName: $componentName")
+            if (packageName.isNullOrEmpty()) {
+                 Log.w(TAG, "getTaskInfo: Could not determine package name. ComponentName: $componentName")
+                 // Return null if package name is essential and missing
+                 return null
             }
 
             TaskInfo(packageName, userId, componentName)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Error getting task info via reflection", e)
+        } catch (e: NoSuchMethodException) {
+            Log.e(TAG, "Error getting task info: Method not found. Launcher version mismatch?", e)
+            null
+        } catch (e: NoSuchFieldException) {
+            Log.e(TAG, "Error getting task info: Field not found. Launcher version mismatch?", e)
+            null
+        } catch (e: Throwable) { // Catch any other reflection errors
+            Log.e(TAG, "Generic error getting task info via reflection", e)
             null
         }
     }
 
-    // --- Optional Visual Feedback Helpers ---
-
     /**
-     * Attempts to find a TextView within the TaskView's hierarchy, potentially the dismiss button/label.
-     * This is highly dependent on the Launcher's layout and might break easily.
+     * Helper to get application label for better Toasts.
      */
-    private fun findDismissView(view: View): TextView? {
-        // Example: Look for a known ID (if available via resources or inspection)
-        // val dismissButtonId = view.context.resources.getIdentifier("dismiss_button", "id", view.context.packageName)
-        // if (dismissButtonId != 0) return view.findViewById(dismissButtonId)
+    private fun getAppLabel(context: Context, packageName: String?): String {
+        if (packageName.isNullOrEmpty()) return "Unknown App"
+        return try {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0) // No flags needed for label
+            pm.getApplicationLabel(appInfo)?.toString() ?: packageName // Fallback to package name
+        } catch (e: Exception) {
+            Log.w(TAG, "Couldn't get app label for $packageName", e)
+            packageName // Fallback to package name on error
+        }
+    }
 
-        // Example: Look for a specific view field (e.g., 'mFooter', 'mDismissButton')
+
+    // --- Optional Visual Feedback Helpers (Fragile - Use with Caution) ---
+
+    private fun findDismissView(view: View): TextView? {
+        // This is highly dependent on the specific Launcher's layout structure.
+        // It might be a Button, an ImageView with content description, or a TextView.
+        // Inspect the layout with a tool if possible.
+        // Example: Search for a view with specific text or content description.
+        // Example: Search within a known container ID (e.g., "dismiss_view", "task_footer")
+
+        // Generic recursive search for *any* TextView (less reliable)
+        // return findTextViewInViewGroup(view)
+
+        // Specific field access (if known from decompilation)
         try {
-            val footerView = XposedHelpers.getObjectField(view, "mFooter") as? ViewGroup
-            if (footerView != null) {
-                // Search recursively within the footer
-                return findTextViewInViewGroup(footerView)
-            }
-            // Add other potential field names if known
+            // Common field names for footer/action views: mActionsView, mFooter, mDismissButton
+             val potentialContainer = XposedHelpers.getObjectField(view, "mActionsView") as? ViewGroup
+                 ?: XposedHelpers.getObjectField(view, "mFooter") as? ViewGroup
+
+             if (potentialContainer != null) {
+                  // Search within the likely container first
+                  return findTextViewInViewGroup(potentialContainer) // Find first TextView inside
+             }
+             // If no known container, maybe search the whole TaskView (less efficient)
+             // return findTextViewInViewGroup(view)
+
         } catch (e: NoSuchFieldException) {
-            // Field doesn't exist, try another method or give up
+             // Field doesn't exist on this version
         } catch (e: Exception) {
             Log.w(TAG, "Error accessing potential dismiss view field", e)
         }
-
-        // Fallback: Recursive search from the TaskView root (less efficient)
-        // return findTextViewInViewGroup(view) // Be careful with performance
-
-        return null // Not found
+        Log.w(TAG, "findDismissView: Could not reliably find a view to change text on.")
+        return null // Not found or error
     }
 
-    /**
-     * Recursively searches for the first TextView within a ViewGroup.
-     */
-    private fun findTextViewInViewGroup(viewGroup: View): TextView? {
-        if (viewGroup is TextView) {
-            return viewGroup
+    private fun findTextViewInViewGroup(view: View): TextView? {
+        if (view is TextView) {
+            // Maybe add checks here? e.g., if (view.isClickable() || !view.text.isNullOrEmpty())
+            return view
         }
-        if (viewGroup is ViewGroup) {
-            for (i in 0 until viewGroup.childCount) {
-                val child = viewGroup.getChildAt(i)
-                val found = findTextViewInViewGroup(child) // Recurse
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                val found = findTextViewInViewGroup(child)
                 if (found != null) {
-                    return found // Return the first one found
+                    return found
                 }
             }
         }
-        return null // Not found in this branch
+        return null
     }
 
-    /**
-     * Attempts to change the text of the dismiss view.
-     */
     private fun changeDismissViewText(taskView: View, text: String) {
+        // Be cautious: This might break easily with launcher updates.
         try {
             findDismissView(taskView)?.let { textView ->
-                // Store original text if needed for reset? Could use view tags.
-                // textView.setTag(R.id.tag_original_text, textView.text) // Need a resource ID for tag key
+                // Consider saving original text if you want to restore it later
+                // textView.setTag(R.id.some_tag_id_for_original_text, textView.text)
                 textView.text = text
-                Log.d(TAG, "Changed dismiss view text to '$text'")
+                Log.d(TAG, "Attempted to change dismiss view text to '$text'")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to change dismiss view text", e)
         }
     }
 
-    /**
-     * Attempts to reset the text of the dismiss view (if original text was stored).
-     */
-    // private fun resetDismissViewText(taskView: View) {
-    //     try {
-    //         findDismissView(taskView)?.let { textView ->
-    //             val originalText = textView.getTag(R.id.tag_original_text) as? CharSequence
-    //             if (originalText != null) {
-    //                 textView.text = originalText
-    //                 Log.d(TAG, "Reset dismiss view text")
-    //             }
-    //         }
-    //     } catch (e: Exception) {
-    //         Log.w(TAG, "Failed to reset dismiss view text", e)
-    //     }
-    // }
+    // Resetting text is likely unnecessary as the view is dismissed, but shown for completeness
+    /*
+    private fun resetDismissViewText(taskView: View) {
+        try {
+            findDismissView(taskView)?.let { textView ->
+                // Assuming you stored the original text in a tag
+                // val originalText = textView.getTag(R.id.some_tag_id_for_original_text) as? CharSequence
+                // if (originalText != null) {
+                //     textView.text = originalText
+                //     Log.d(TAG, "Attempted to reset dismiss view text")
+                // } else {
+                     // Fallback: Try setting to a default like "Dismiss" or empty string?
+                // }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to reset dismiss view text", e)
+        }
+    }
+    */
 }

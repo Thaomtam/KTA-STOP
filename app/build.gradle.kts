@@ -6,7 +6,6 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.refine)
 }
 
 val keystorePropertiesFile: File = rootProject.file("keystore.properties")
@@ -116,6 +115,5 @@ dependencies {
     compileOnly(libs.xposed.api)
     compileOnly(libs.androidx.annotation)
     implementation(libs.ezxhelper)
-    implementation(libs.dev.rikka.hidden.compat)
-    compileOnly(libs.dev.rikka.hidden.stub)
+	implementation(libs.hiddenapibypass)
 }
