@@ -1,7 +1,7 @@
 package com.KTA.STOP
 
 import android.content.ComponentName
-import android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,15 +12,13 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import rikka.hidden.compat.ActivityManagerApis
-import rikka.hidden.compat.PackageManagerApis
 
 class ForceStopAndDisableHandler : IXposedHookLoadPackage {
     companion object {
-        private const val TAG = "KTASTOP_ForceStopAndDisable" // Thay đổi TAG để dễ phân biệt trong log
+        private const val TAG = "KTASTOP_ForceStopAndDisable"
         
         private val EXCEPTION_LIST = setOf(
             "android",
-            "com.zing.zalo",
             "com.android.systemui",
             "com.android.launcher3",
             "com.android.settings",
@@ -114,12 +112,18 @@ class ForceStopAndDisableHandler : IXposedHookLoadPackage {
             ActivityManagerApis.forceStopPackage(packageName, userId)
             Log.d(TAG, "Force stopped package: $packageName")
 
+            // Lấy PackageManager từ context của Launcher3
+            val context = XposedHelpers.callStaticMethod(
+                XposedHelpers.findClass("android.app.ActivityThread", null),
+                "currentApplication"
+            ) as android.content.Context
+            val pm = context.packageManager
+
             // Vô hiệu hóa ứng dụng để ngăn tự khởi động
-            PackageManagerApis.setApplicationEnabledSetting(
+            pm.setApplicationEnabledSetting(
                 packageName,
-                COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED,
-                0,
-                userId
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED,
+                0 // flags
             )
             Log.d(TAG, "Disabled package $packageName until manually launched")
         }.onFailure {
