@@ -9,7 +9,7 @@
 -keep class com.github.kyuubiran.ezxhelper.utils.** { *; }
 
 # Giữ lại các lớp từ Rikka Hidden API
--keep class dev.rikka.hidden.** { *; }
+-keep class dev.rikka.tools.** { *; }
 
 # Bỏ qua các cảnh báo về các lớp từ Xposed
 -dontwarn java.lang.invoke.StringConcatFactory

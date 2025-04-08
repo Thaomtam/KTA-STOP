@@ -6,6 +6,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.refine)
 }
 
 val keystorePropertiesFile: File = rootProject.file("keystore.properties")
@@ -101,7 +102,6 @@ android {
             excludes += "**"
         }
     }
-    // https://stackoverflow.com/a/77745844
     tasks.withType<PackageAndroidArtifact> {
         doFirst { appMetadata.asFile.orNull?.writeText("") }
     }
@@ -115,5 +115,7 @@ dependencies {
     compileOnly(libs.xposed.api)
     compileOnly(libs.androidx.annotation)
     implementation(libs.ezxhelper)
-	implementation(libs.hiddenapibypass)
+    implementation(libs.dev.rikka.hidden.compat)
+    compileOnly(libs.dev.rikka.hidden.stub)
+    implementation(libs.dev.rikka.refine.runtime) // Thêm dòng này
 }
