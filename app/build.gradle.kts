@@ -117,5 +117,4 @@ dependencies {
     implementation(libs.ezxhelper)
     implementation(libs.dev.rikka.hidden.compat)
     compileOnly(libs.dev.rikka.hidden.stub)
-    implementation(libs.dev.rikka.refine.runtime) // Thêm dòng này
 }

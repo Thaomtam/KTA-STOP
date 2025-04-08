@@ -11,7 +11,6 @@ xposed-api = { module = "de.robv.android.xposed:api", version.ref = "xposed" }
 androidx-annotation = { module = "androidx.annotation:annotation-jvm", version.ref = "annotation" }
 dev-rikka-hidden-compat = { module = "dev.rikka.hidden:compat", version.ref = "hidden-api" }
 dev-rikka-hidden-stub = { module = "dev.rikka.hidden:stub", version.ref = "hidden-api" }
-dev-rikka-refine-runtime = { module = "dev.rikka.tools.refine:runtime", version = "4.4.0" }
 ezxhelper = { module = "com.github.kyuubiran:EzXHelper", version.ref = "ezxhelper" }
 
 [plugins]

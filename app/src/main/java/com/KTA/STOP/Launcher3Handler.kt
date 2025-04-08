@@ -1,6 +1,5 @@
 package com.KTA.STOP
 
-import android.app.ActivityManager
 import android.content.ComponentName
 import android.os.Handler
 import android.os.Looper
@@ -11,17 +10,14 @@ import com.github.kyuubiran.ezxhelper.utils.hookAfter
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import dev.rikka.tools.refine.Refine
-import dev.rikka.tools.refine.RefineAs
+import rikka.hidden.compat.ActivityManagerApis // Sử dụng đúng lớp từ HiddenApi
 
 class Launcher3Handler : IXposedHookLoadPackage {
     companion object {
-        private const val TAG = "KTASTOP-Launcher3Handler"
+        private const val TAG = "MyInjector-Launcher3Handler"
         
-        // Danh sách các ứng dụng ngoại lệ (không được phép "force stop")
         private val EXCEPTION_LIST = setOf(
             "android",
-			"com.zing.zalo",
             "com.android.systemui",
             "com.android.launcher3",
             "com.android.settings",
@@ -112,21 +108,11 @@ class Launcher3Handler : IXposedHookLoadPackage {
                 return@runCatching
             }
 
-            // Sử dụng Refine để gọi forceStopPackage qua ActivityManager
-            val activityManager = Refine.unsafeCast<ActivityManagerHidden>(
-                view.context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
-            )
-            activityManager.forceStopPackage(packageName, userId)
+            // Sử dụng forceStopPackage từ ActivityManagerApis của HiddenApi
+            ActivityManagerApis.forceStopPackage(packageName, userId)
             Log.d(TAG, "Force stopped package: $packageName")
         }.onFailure {
             Log.e(TAG, "Error force stopping package", it)
         }
-    }
-}
-
-@RefineAs(ActivityManager::class)
-class ActivityManagerHidden {
-    fun forceStopPackage(packageName: String, userId: Int) {
-        throw RuntimeException("Stub!")
     }
 }
