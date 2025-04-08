@@ -1,5 +1,6 @@
 package com.KTA.STOP
 
+import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.Handler
@@ -11,7 +12,6 @@ import com.github.kyuubiran.ezxhelper.utils.hookAfter
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import rikka.hidden.compat.ActivityManagerApis
 
 class ForceStopAndDisableHandler : IXposedHookLoadPackage {
     companion object {
@@ -108,15 +108,20 @@ class ForceStopAndDisableHandler : IXposedHookLoadPackage {
                 return@runCatching
             }
 
-            // Buộc dừng ứng dụng
-            ActivityManagerApis.forceStopPackage(packageName, userId)
-            Log.d(TAG, "Force stopped package: $packageName")
-
-            // Lấy PackageManager từ context của Launcher3
+            // Lấy context từ Launcher3
             val context = XposedHelpers.callStaticMethod(
                 XposedHelpers.findClass("android.app.ActivityThread", null),
                 "currentApplication"
             ) as android.content.Context
+
+            // Lấy ActivityManager từ context
+            val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as ActivityManager
+
+            // Buộc dừng ứng dụng trực tiếp bằng ActivityManager
+            am.forceStopPackage(packageName)
+            Log.d(TAG, "Force stopped package: $packageName")
+
+            // Lấy PackageManager từ context
             val pm = context.packageManager
 
             // Vô hiệu hóa ứng dụng để ngăn tự khởi động
